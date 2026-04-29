@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Color Classifier - KNN Color Detection</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero">
+        <div class="hero-inner">
+          <h1>Color Classifier</h1>
+          <p>K-Nearest Neighbors for Image Color Classification</p>
+        </div>
+      </header>
+
+      <section class="workspace">
+        <div class="panel image-panel">
+          <div class="panel-head">
+            <h2>Image</h2>
+          </div>
+
+          <div id="uploadZone" class="drop-area">
+            <div class="drop-copy">
+              <p>Upload, paste, or drop your image here</p>
+              <div class="drop-actions">
+                <input
+                  type="file"
+                  id="imageInput"
+                  accept="image/*"
+                  class="file-input"
+                />
+                <button id="pickFileBtn" class="primary-btn" type="button">
+                  Use your image
+                </button>
+              </div>
+              <span class="muted">PNG, JPG, WebP supported</span>
+            </div>
+          </div>
+
+          <div id="imagePreview" class="image-preview hidden">
+            <img id="previewImg" alt="Preview" />
+          </div>
+
+          <div class="palette-block">
+            <div class="palette-head">
+              <span>Color Palette</span>
+              <div class="palette-controls">
+                <button id="paletteMinus" class="ghost-btn" type="button">
+                  -
+                </button>
+                <button id="palettePlus" class="ghost-btn" type="button">
+                  +
+                </button>
+              </div>
+            </div>
+            <div id="paletteSwatches" class="palette-swatches">
+              <span class="placeholder">Pick an image to generate palette</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel colors-panel">
+          <div class="panel-head">
+            <h2>Colors</h2>
+          </div>
+
+          <div class="swatch-row">
+            <div id="primarySwatch" class="swatch large"></div>
+            <div id="secondarySwatch" class="swatch large"></div>
+          </div>
+
+          <div class="detail-list">
+            <div class="detail-row">
+              <span>HEX</span>
+              <input id="hexValue" readonly />
+              <button data-copy="hexValue" class="copy-btn">Copy</button>
+            </div>
+            <div class="detail-row">
+              <span>RGB</span>
+              <input id="rgbValue" readonly />
+              <button data-copy="rgbValue" class="copy-btn">Copy</button>
+            </div>
+            <div class="detail-row">
+              <span>HSL</span>
+              <input id="hslValue" readonly />
+              <button data-copy="hslValue" class="copy-btn">Copy</button>
+            </div>
+          </div>
+
+          <div class="result-card">
+            <div class="result-head">Classification</div>
+            <div id="resultArea" class="result-area">
+              <span class="placeholder">Select a color to classify</span>
+            </div>
+          </div>
+
+          <div class="use-image">
+            <div class="use-title">Use your own image</div>
+            <button id="useImageBtn" class="primary-btn" type="button">
+              Use your image
+            </button>
+            <button id="eyeDropperBtn" class="secondary-btn" type="button">
+              Pick from screen
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel utilities-panel">
+        <div class="panel-head">
+          <h2>Utilities</h2>
+        </div>
+        <div class="utilities-actions">
+          <button id="btn-config" class="secondary-btn">Config</button>
+          <button id="btn-summary" class="secondary-btn">Summary</button>
+          <button id="btn-run-tests" class="secondary-btn">Run Tests</button>
+        </div>
+        <div id="utilResult" class="util-result hidden">
+          <pre id="utilOutput"></pre>
+        </div>
+      </section>
+    </main>
+
+    <script src="/static/main.js"></script>
+  </body>
+</html>
