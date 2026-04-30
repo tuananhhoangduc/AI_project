@@ -52,7 +52,7 @@ body {
 
 .workspace {
   display: grid;
-  grid-template-columns: 1.05fr 0.95fr;
+  grid-template-columns: 1.2fr 0.8fr;
   gap: 20px;
 }
 
@@ -123,6 +123,8 @@ body {
 
 .image-preview img {
   width: 100%;
+  max-height: 440px;
+  height: auto;
   border-radius: 12px;
   border: 1px solid var(--border);
 }
@@ -263,24 +265,6 @@ body {
   font-weight: 600;
 }
 
-.utilities-panel {
-  margin-top: 20px;
-}
-
-.utilities-actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-bottom: 12px;
-}
-
-.util-result {
-  background: #f8fafc;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  padding: 12px;
-}
-
 pre {
   margin: 0;
   font-family: "Courier New", monospace;
@@ -338,4 +322,28 @@ pre {
 
 .hidden {
   display: none;
+}
+
+.image-frame {
+  position: relative;
+}
+
+.image-frame img {
+  display: block;
+  cursor: crosshair;
+}
+
+.magnifier {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  border-radius: 12px;
+}
+
+.magnifier-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
 }

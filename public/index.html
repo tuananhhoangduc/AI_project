@@ -46,7 +46,13 @@
           </div>
 
           <div id="imagePreview" class="image-preview hidden">
-            <img id="previewImg" alt="Preview" />
+            <div class="image-frame">
+              <img id="previewImg" alt="Preview" />
+              <canvas id="magnifierCanvas" class="magnifier hidden"></canvas>
+            </div>
+            <div class="magnifier-hint">
+              Hover the image to preview color, click to select.
+            </div>
           </div>
 
           <div class="palette-block">
@@ -111,20 +117,6 @@
               Pick from screen
             </button>
           </div>
-        </div>
-      </section>
-
-      <section class="panel utilities-panel">
-        <div class="panel-head">
-          <h2>Utilities</h2>
-        </div>
-        <div class="utilities-actions">
-          <button id="btn-config" class="secondary-btn">Config</button>
-          <button id="btn-summary" class="secondary-btn">Summary</button>
-          <button id="btn-run-tests" class="secondary-btn">Run Tests</button>
-        </div>
-        <div id="utilResult" class="util-result hidden">
-          <pre id="utilOutput"></pre>
         </div>
       </section>
     </main>
