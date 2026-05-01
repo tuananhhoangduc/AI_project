@@ -50,6 +50,9 @@ class ColorModelService:
         self.models: dict[str, KNeighborsClassifier] = {}
         self.metric_results: list[dict] = []
         self.best_metric_name: str | None = None
+        self.k_neighbors = K_NEIGHBORS
+        self.test_size = TEST_SIZE
+        self.random_state = RANDOM_STATE
 
     def load_dataset(self) -> None:
         df = pd.read_csv(self.csv_path)
@@ -69,8 +72,8 @@ class ColorModelService:
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
             self.X,
             self.y,
-            test_size=TEST_SIZE,
-            random_state=RANDOM_STATE,
+            test_size=self.test_size,
+            random_state=self.random_state,
             stratify=self.y,
         )
 
@@ -80,7 +83,7 @@ class ColorModelService:
 
         metric, extra_params = METRIC_CONFIGS[metric_name]
         return KNeighborsClassifier(
-            n_neighbors=K_NEIGHBORS,
+            n_neighbors=self.k_neighbors,
             metric=metric,
             **extra_params,
         )
@@ -125,9 +128,9 @@ class ColorModelService:
 
     def get_config(self) -> dict:
         return {
-            "k_neighbors": K_NEIGHBORS,
-            "test_size": TEST_SIZE,
-            "random_state": RANDOM_STATE,
+            "k_neighbors": self.k_neighbors,
+            "test_size": self.test_size,
+            "random_state": self.random_state,
             "metrics": list(METRIC_CONFIGS.keys()),
             "recommended_metric": self.best_metric_name,
         }
@@ -270,4 +273,38 @@ class ColorModelService:
             "used_metric": used_metric,
             "recommended_metric": self.best_metric_name,
             "report": report,
+        }
+
+    def retrain(
+        self,
+        k_neighbors: int | None = None,
+        test_size: float | None = None,
+        random_state: int | None = None,
+    ) -> dict:
+        if k_neighbors is not None:
+            if k_neighbors < 1 or k_neighbors > 50:
+                raise ValueError("k_neighbors phai trong khoang 1..50")
+            self.k_neighbors = int(k_neighbors)
+
+        if test_size is not None:
+            if test_size <= 0 or test_size >= 0.5:
+                raise ValueError("test_size phai > 0 va < 0.5")
+            self.test_size = float(test_size)
+
+        if random_state is not None:
+            if random_state < 0:
+                raise ValueError("random_state phai >= 0")
+            self.random_state = int(random_state)
+
+        self.split_dataset()
+
+        if self.X_train is not None and self.k_neighbors > len(self.X_train):
+            raise ValueError("k_neighbors lon hon so luong mau training")
+
+        self.train_all()
+
+        return {
+            "message": "Model retrained successfully",
+            "config": self.get_config(),
+            "summary": self.get_summary(),
         }

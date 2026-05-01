@@ -86,8 +86,8 @@ function renderHarmonies(rgb) {
           <div class="harmony-name">${escapeHtml(group.name)}</div>
           <div class="harmony-colors">
             ${group.colors
-              .map(
-                (color) => `
+          .map(
+            (color) => `
                   <button
                     class="harmony-color"
                     type="button"
@@ -98,8 +98,8 @@ function renderHarmonies(rgb) {
                     <span>${color.hex}</span>
                   </button>
                 `,
-              )
-              .join("")}
+          )
+          .join("")}
           </div>
         </div>
       `,
@@ -144,11 +144,10 @@ function renderScanHistory() {
       (item) => `
         <div class="scan-history-item">
           <div class="scan-history-left">
-            ${
-              item.snapshot
-                ? `<img class="scan-history-thumb" src="${item.snapshot}" alt="scan frame" />`
-                : ""
-            }
+            ${item.snapshot
+          ? `<img class="scan-history-thumb" src="${item.snapshot}" alt="scan frame" />`
+          : ""
+        }
             <div class="scan-history-swatch" style="background:${item.hex}"></div>
             <div class="scan-history-meta">
               <div class="scan-history-label">${escapeHtml(item.label)}</div>
@@ -166,14 +165,14 @@ function pushScanHistory(result, meta = {}) {
   if (!result) return;
 
   const item = {
-  hex: result.hex,
-  rgb: result.rgb,
-  label: result.recommended_prediction || "unknown",
-  metric: result.recommended_metric || "-",
-  time: meta.scannedAt || new Date().toLocaleTimeString("vi-VN"),
-  snapshot: meta.snapshot || null,
-  distance: typeof meta.distance === "number" ? meta.distance : null,
-};
+    hex: result.hex,
+    rgb: result.rgb,
+    label: result.recommended_prediction || "unknown",
+    metric: result.recommended_metric || "-",
+    time: meta.scannedAt || new Date().toLocaleTimeString("vi-VN"),
+    snapshot: meta.snapshot || null,
+    distance: typeof meta.distance === "number" ? meta.distance : null,
+  };
 
   const latest = state.scanHistory[0];
 
@@ -204,7 +203,7 @@ async function selectColor(rgb, options = {}) {
 
   if (options.source === "webcam" && result) {
     renderWebcamCurrent(result);
-    pushScanHistory(result);
+    pushScanHistory(result, options.meta || {});
   }
 
   return result;
@@ -354,6 +353,550 @@ function renderKnnPlot(result) {
   );
 }
 
+function setActiveUtilityTab(activeId) {
+  ["btn-summary", "btn-config", "btn-run-tests"].forEach((id) => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.classList.toggle("active", id === activeId);
+  });
+}
+
+function showUtilityLoading(message = "Loading...") {
+  show("#utilResult");
+  $("#utilOutput").innerHTML = `
+    <div class="utility-loading">
+      <div class="utility-spinner"></div>
+      <span>${escapeHtml(message)}</span>
+    </div>
+  `;
+}
+
+function showUtilityError(error) {
+  show("#utilResult");
+  $("#utilOutput").innerHTML = `
+    <div class="utility-error">
+      <strong>Something went wrong</strong>
+      <span>${escapeHtml(error.message || String(error))}</span>
+    </div>
+  `;
+}
+
+function toPercent(value) {
+  const number = Number(value || 0);
+  return `${Math.round(number * 100)}%`;
+}
+
+function formatMetricName(metric) {
+  const names = {
+    euclidean: "Euclidean",
+    manhattan: "Manhattan",
+    chebyshev: "Chebyshev",
+    minkowski_p3: "Minkowski p=3",
+  };
+
+  return names[metric] || metric;
+}
+
+function getMetricDescription(metric) {
+  const descriptions = {
+    euclidean: "Straight-line distance in RGB space.",
+    manhattan: "Sum of absolute RGB differences.",
+    chebyshev: "Largest single-channel difference.",
+    minkowski_p3: "Minkowski distance with p = 3.",
+  };
+
+  return descriptions[metric] || "Distance metric used by KNN.";
+}
+
+function renderStatCards(cards) {
+  return `
+    <div class="utility-stat-grid">
+      ${cards
+      .map(
+        (card) => `
+            <div class="utility-stat-card">
+              <span>${escapeHtml(card.label)}</span>
+              <strong>${escapeHtml(String(card.value))}</strong>
+              ${card.description
+            ? `<small>${escapeHtml(card.description)}</small>`
+            : ""
+          }
+            </div>
+          `,
+      )
+      .join("")}
+    </div>
+  `;
+}
+
+function renderLabelDistribution(labels = {}) {
+  const entries = Object.entries(labels).sort((a, b) => b[1] - a[1]);
+  const max = Math.max(...entries.map(([, count]) => count), 1);
+
+  return `
+    <div class="utility-section">
+      <div class="utility-section-head">
+        <h3>Dataset label distribution</h3>
+        <span>${entries.length} labels</span>
+      </div>
+
+      <div class="label-bars">
+        ${entries
+      .map(([label, count]) => {
+        const percent = Math.max(4, Math.round((count / max) * 100));
+        return `
+              <div class="label-bar-row">
+                <div class="label-bar-info">
+                  <strong>${escapeHtml(label)}</strong>
+                  <span>${count} samples</span>
+                </div>
+                <div class="label-bar-track">
+                  <div style="width:${percent}%"></div>
+                </div>
+              </div>
+            `;
+      })
+      .join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderMetricCards(results = [], recommendedMetric) {
+  return `
+    <div class="utility-section">
+      <div class="utility-section-head">
+        <h3>Metric performance</h3>
+        <span>Higher is better</span>
+      </div>
+
+      <div class="metric-card-grid">
+        ${results
+      .map((item) => {
+        const isBest = item.metric_name === recommendedMetric;
+        return `
+              <div class="metric-card ${isBest ? "best" : ""}">
+                <div class="metric-card-top">
+                  <strong>${escapeHtml(formatMetricName(item.metric_name))}</strong>
+                  ${isBest ? `<span class="best-badge">Best</span>` : ""}
+                </div>
+
+                <p>${escapeHtml(getMetricDescription(item.metric_name))}</p>
+
+                <div class="metric-score">
+                  <span>Accuracy</span>
+                  <strong>${toPercent(item.accuracy)}</strong>
+                </div>
+                <div class="metric-progress">
+                  <div style="width:${Math.round(Number(item.accuracy || 0) * 100)}%"></div>
+                </div>
+
+                <div class="metric-score">
+                  <span>Macro F1</span>
+                  <strong>${toPercent(item.macro_f1)}</strong>
+                </div>
+                <div class="metric-progress secondary">
+                  <div style="width:${Math.round(Number(item.macro_f1 || 0) * 100)}%"></div>
+                </div>
+              </div>
+            `;
+      })
+      .join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderSummaryDashboard(summary) {
+  const dataset = summary.dataset || {};
+  const config = summary.config || {};
+  const best = summary.recommended_metric || {};
+  const results = summary.results || [];
+
+  show("#utilResult");
+
+  $("#utilOutput").innerHTML = `
+    ${renderStatCards([
+      {
+        label: "Dataset rows",
+        value: dataset.rows || 0,
+        description: "RGB color samples used by the model",
+      },
+      {
+        label: "Recommended metric",
+        value: formatMetricName(config.recommended_metric || best.metric_name || "-"),
+        description: "Selected by accuracy and Macro F1",
+      },
+      {
+        label: "K neighbors",
+        value: config.k_neighbors || "-",
+        description: "Number of nearest samples used for voting",
+      },
+      {
+        label: "Best accuracy",
+        value: best.accuracy !== undefined ? toPercent(best.accuracy) : "-",
+        description: "Performance on the test split",
+      },
+    ])}
+
+    ${renderMetricCards(results, config.recommended_metric || best.metric_name)}
+
+    ${renderLabelDistribution(dataset.labels || {})}
+  `;
+}
+
+function renderExperimentControls(config, notice = "") {
+  const safeK = Number(config.k_neighbors || 5);
+  const safeTestSize = Number(config.test_size ?? 0.2);
+  const safeRandomState = Number(config.random_state ?? 42);
+
+  return `
+    <div class="utility-section experiment-section">
+      <div class="utility-section-head">
+        <div>
+          <h3>Experiment controls</h3>
+          <p class="utility-section-desc">
+            Change KNN parameters, retrain the model, then compare accuracy and test results again.
+          </p>
+        </div>
+        <span>Live retrain</span>
+      </div>
+
+      ${notice ? `<div class="experiment-notice">${escapeHtml(notice)}</div>` : ""}
+
+      <form id="retrainForm" class="experiment-form">
+        <label class="experiment-field">
+          <span>K neighbors</span>
+          <input
+            id="expKNeighbors"
+            type="number"
+            min="1"
+            max="50"
+            step="1"
+            value="${safeK}"
+          />
+          <small>Lower K is more sensitive. Higher K is more stable.</small>
+        </label>
+
+        <label class="experiment-field">
+          <span>Test size</span>
+          <select id="expTestSize">
+            ${[0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4]
+              .map(
+                (value) => `
+                  <option value="${value}" ${Math.abs(value - safeTestSize) < 0.0001 ? "selected" : ""}>
+                    ${Math.round(value * 100)}% test / ${Math.round((1 - value) * 100)}% train
+                  </option>
+                `,
+              )
+              .join("")}
+          </select>
+          <small>Controls how much data is reserved for evaluation.</small>
+        </label>
+
+        <label class="experiment-field">
+          <span>Random state</span>
+          <input
+            id="expRandomState"
+            type="number"
+            min="0"
+            step="1"
+            value="${safeRandomState}"
+          />
+          <small>Same seed gives reproducible train/test split.</small>
+        </label>
+
+        <div class="experiment-actions">
+          <button id="retrainModelBtn" class="primary-btn" type="submit">
+            Retrain model
+          </button>
+          <button id="resetExperimentBtn" class="secondary-btn" type="button">
+            Reset default
+          </button>
+        </div>
+      </form>
+
+      <div id="retrainStatus" class="experiment-status muted">
+        Current setup: K=${safeK}, test size=${Math.round(safeTestSize * 100)}%, seed=${safeRandomState}.
+      </div>
+    </div>
+  `;
+}
+
+function readExperimentPayload() {
+  const k = Number($("#expKNeighbors")?.value || 5);
+  const testSize = Number($("#expTestSize")?.value || 0.2);
+  const randomState = Number($("#expRandomState")?.value || 42);
+
+  if (!Number.isInteger(k) || k < 1 || k > 50) {
+    throw new Error("K neighbors must be an integer from 1 to 50.");
+  }
+
+  if (!Number.isFinite(testSize) || testSize <= 0 || testSize >= 0.5) {
+    throw new Error("Test size must be greater than 0 and less than 50%.");
+  }
+
+  if (!Number.isInteger(randomState) || randomState < 0) {
+    throw new Error("Random state must be a non-negative integer.");
+  }
+
+  return {
+    k_neighbors: k,
+    test_size: testSize,
+    random_state: randomState,
+  };
+}
+
+function extractApiData(payload) {
+  return payload && payload.data ? payload.data : payload;
+}
+
+function setRetrainStatus(message, type = "info") {
+  const status = document.getElementById("retrainStatus");
+  if (!status) return;
+  status.className = `experiment-status ${type}`;
+  status.textContent = message;
+}
+
+function bindRetrainControls() {
+  const form = document.getElementById("retrainForm");
+  const resetBtn = document.getElementById("resetExperimentBtn");
+  const submitBtn = document.getElementById("retrainModelBtn");
+
+  if (!form || !submitBtn) return;
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    try {
+      const payload = readExperimentPayload();
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Retraining...";
+      setRetrainStatus("Retraining model with new KNN parameters...", "info");
+
+      const response = await postJson("/api/model/retrain", payload);
+      const data = extractApiData(response);
+      const nextConfig = data.config || (await jsonFetch("/api/config"));
+      const summary = data.summary || null;
+
+      renderConfigDashboard(
+        nextConfig,
+        `Model retrained successfully: K=${nextConfig.k_neighbors}, test size=${Math.round(nextConfig.test_size * 100)}%, seed=${nextConfig.random_state}.`,
+      );
+
+      if (summary) {
+        state.latestModelSummary = summary;
+      }
+
+      if (state.selected) {
+        await classifyColor(state.selected);
+      }
+    } catch (error) {
+      setRetrainStatus(error.message || String(error), "error");
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Retrain model";
+    }
+  });
+
+  resetBtn?.addEventListener("click", () => {
+    $("#expKNeighbors").value = 5;
+    $("#expTestSize").value = 0.2;
+    $("#expRandomState").value = 42;
+    setRetrainStatus("Default values restored. Click Retrain model to apply them.", "info");
+  });
+}
+
+function renderConfigDashboard(config, notice = "") {
+  show("#utilResult");
+
+  const metrics = config.metrics || [];
+
+  $("#utilOutput").innerHTML = `
+    ${renderStatCards([
+    {
+      label: "K neighbors",
+      value: config.k_neighbors || "-",
+      description: "The model votes from K nearest colors",
+    },
+    {
+      label: "Test size",
+      value: config.test_size !== undefined ? `${Math.round(config.test_size * 100)}%` : "-",
+      description: "Dataset proportion used for evaluation",
+    },
+    {
+      label: "Random state",
+      value: config.random_state ?? "-",
+      description: "Keeps train/test split reproducible",
+    },
+    {
+      label: "Recommended",
+      value: formatMetricName(config.recommended_metric || "-"),
+      description: "Default metric used for predictions",
+    },
+  ])}
+
+    ${renderExperimentControls(config, notice)}
+
+    <div class="utility-section">
+      <div class="utility-section-head">
+        <h3>Available distance metrics</h3>
+        <span>${metrics.length} metrics</span>
+      </div>
+
+      <div class="metric-mini-list">
+        ${metrics
+      .map(
+        (metric) => `
+              <div class="metric-mini-item ${metric === config.recommended_metric ? "active" : ""}">
+                <strong>${escapeHtml(formatMetricName(metric))}</strong>
+                <span>${escapeHtml(getMetricDescription(metric))}</span>
+              </div>
+            `,
+      )
+      .join("")}
+      </div>
+    </div>
+  `;
+
+  bindRetrainControls();
+}
+
+function renderTestMetricControls(usedMetric = "") {
+  const metrics = ["", "euclidean", "manhattan", "chebyshev", "minkowski_p3"];
+
+  return `
+    <div class="utility-section test-control-section">
+      <div class="utility-section-head">
+        <div>
+          <h3>Test controls</h3>
+          <p class="utility-section-desc">
+            Run manual test cases with a specific distance metric without retraining the whole model.
+          </p>
+        </div>
+      </div>
+
+      <div class="test-control-row">
+        <label class="experiment-field compact">
+          <span>Metric for manual tests</span>
+          <select id="testMetricSelect">
+            ${metrics
+              .map((metric) => {
+                const label = metric ? formatMetricName(metric) : "Recommended metric";
+                const selected = metric === usedMetric ? "selected" : "";
+                return `<option value="${metric}" ${selected}>${label}</option>`;
+              })
+              .join("")}
+          </select>
+        </label>
+
+        <button id="runTestMetricBtn" class="primary-btn" type="button">
+          Run selected test
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+async function loadTestDashboard(metric = "") {
+  setActiveUtilityTab("btn-run-tests");
+  showUtilityLoading("Running manual test cases...");
+
+  try {
+    const url = metric ? `/api/test-cases/run?metric=${encodeURIComponent(metric)}` : "/api/test-cases/run";
+    const result = await jsonFetch(url);
+    renderTestDashboard(result);
+  } catch (error) {
+    showUtilityError(error);
+  }
+}
+
+function bindTestControls() {
+  const btn = document.getElementById("runTestMetricBtn");
+  if (!btn) return;
+
+  btn.addEventListener("click", () => {
+    const metric = document.getElementById("testMetricSelect")?.value || "";
+    loadTestDashboard(metric);
+  });
+}
+
+function renderTestDashboard(result) {
+  show("#utilResult");
+
+  const summary = result.summary || {};
+  const cases = result.cases || [];
+  const accuracy = summary.accuracy_on_manual_cases || 0;
+
+  const clearCases = cases.filter((item) => item.name.includes("_clear"));
+  const hardCases = cases.filter((item) => item.name.includes("_ambiguous"));
+
+  function renderCases(title, list) {
+    return `
+      <div class="utility-section">
+        <div class="utility-section-head">
+          <h3>${escapeHtml(title)}</h3>
+          <span>${list.filter((item) => item.is_correct).length}/${list.length} passed</span>
+        </div>
+
+        <div class="test-case-grid">
+          ${list
+        .map(
+          (item) => `
+                <div class="test-case-item ${item.is_correct ? "pass" : "fail"}">
+                  <div class="test-case-color" style="background:${item.hex}"></div>
+                  <div>
+                    <strong>${escapeHtml(item.name)}</strong>
+                    <span>${escapeHtml(item.hex)} · rgb(${item.rgb.join(", ")})</span>
+                  </div>
+                  <div class="test-case-result">
+                    <strong>${escapeHtml(item.predicted)}</strong>
+                    <span>Expected: ${escapeHtml(item.expected)}</span>
+                  </div>
+                </div>
+              `,
+        )
+        .join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  $("#utilOutput").innerHTML = `
+    ${renderStatCards([
+    {
+      label: "Manual test accuracy",
+      value: toPercent(accuracy),
+      description: `${summary.correct_cases || 0}/${summary.total_cases || 0} cases passed`,
+    },
+    {
+      label: "Used metric",
+      value: formatMetricName(result.used_metric || "-"),
+      description: "Metric used when running manual test cases",
+    },
+    {
+      label: "Recommended metric",
+      value: formatMetricName(result.recommended_metric || "-"),
+      description: "Metric selected from model evaluation",
+    },
+  ])}
+
+    <div class="utility-section">
+      <div class="utility-section-head">
+        <h3>Overall result</h3>
+        <span>${toPercent(accuracy)}</span>
+      </div>
+      <div class="test-progress">
+        <div style="width:${Math.round(accuracy * 100)}%"></div>
+      </div>
+    </div>
+
+    ${renderCases("Clear color cases", clearCases)}
+    ${renderCases("Ambiguous color cases", hardCases)}
+  `;
+
+  bindTestControls();
+}
+
 function bindEvents() {
   const imageInput = $("#imageInput");
   const uploadZone = $("#uploadZone");
@@ -403,9 +946,9 @@ function bindEvents() {
   });
 
   $("#clearScanHistoryBtn")?.addEventListener("click", () => {
-  state.scanHistory = [];
-  renderScanHistory();
-});
+    state.scanHistory = [];
+    renderScanHistory();
+  });
 
   $("#eyeDropperBtn").addEventListener("click", async () => {
     if (!window.EyeDropper) {
@@ -438,27 +981,37 @@ function bindEvents() {
   $("#loadNeighborsBtn").addEventListener("click", loadNeighbors);
 
   $("#btn-config").addEventListener("click", async () => {
-    const result = await jsonFetch("/api/config");
-    show("#utilResult");
-    $("#utilOutput").textContent = JSON.stringify(result, null, 2);
+    setActiveUtilityTab("btn-config");
+    showUtilityLoading("Loading model configuration...");
+
+    try {
+      const result = await jsonFetch("/api/config");
+      renderConfigDashboard(result);
+    } catch (error) {
+      showUtilityError(error);
+    }
   });
 
   $("#btn-summary").addEventListener("click", async () => {
-    const result = await jsonFetch("/api/model/summary");
-    show("#utilResult");
-    $("#utilOutput").textContent = JSON.stringify(result, null, 2);
+    setActiveUtilityTab("btn-summary");
+    showUtilityLoading("Loading model overview...");
+
+    try {
+      const result = await jsonFetch("/api/model/summary");
+      renderSummaryDashboard(result);
+    } catch (error) {
+      showUtilityError(error);
+    }
   });
 
-  $("#btn-run-tests").addEventListener("click", async () => {
-    show("#utilResult");
-    $("#utilOutput").textContent = "Running tests...";
-    const result = await jsonFetch("/api/test-cases/run");
-    $("#utilOutput").textContent = JSON.stringify(result, null, 2);
+  $("#btn-run-tests").addEventListener("click", () => {
+    loadTestDashboard();
   });
 }
 
 bindEvents();
 renderScanHistory();
+document.getElementById("btn-summary")?.click();
 
 setupWebcamPicker({
   interval: 2000,

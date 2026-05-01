@@ -63,6 +63,11 @@ class PredictRequest(BaseModel):
 class NeighborsRequest(PredictRequest):
     k: int | None = Field(default=None, ge=1, le=30)
 
+class RetrainRequest(BaseModel):
+    k_neighbors: int | None = Field(default=None, ge=1, le=50)
+    test_size: float | None = Field(default=None, gt=0, lt=0.5)
+    random_state: int | None = Field(default=None, ge=0)
+
 
 @app.get("/api/health")
 def health():
@@ -77,6 +82,17 @@ def get_config():
 @app.get("/api/model/summary")
 def get_model_summary():
     return service.get_summary()
+
+@app.post("/api/model/retrain")
+def retrain_model(payload: RetrainRequest):
+    try:
+        return service.retrain(
+            k_neighbors=payload.k_neighbors,
+            test_size=payload.test_size,
+            random_state=payload.random_state,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.get("/api/test-cases")
@@ -129,3 +145,4 @@ def predict_neighbors(payload: NeighborsRequest):
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
