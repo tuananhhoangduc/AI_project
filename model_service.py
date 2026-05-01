@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
+from sklearn.metrics import accuracy_score, classification_report, f1_score
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import accuracy_score, f1_score, classification_report
 
 from test_cases import ALL_TEST_CASES
 
@@ -23,33 +23,49 @@ METRIC_CONFIGS = {
 
 
 def rgb_to_hex(rgb: list[int]) -> str:
-    return "#{:02x}{:02x}{:02x}".format(rgb[0], rgb[1], rgb[2])
+    return "#{:02x}{:02x}{:02x}".format(int(rgb[0]), int(rgb[1]), int(rgb[2]))
+
+
+def normalize_rgb(rgb: list[int]) -> list[int]:
+    if len(rgb) != 3:
+        raise ValueError("RGB phai co dung 3 gia tri")
+    output = []
+    for value in rgb:
+        if value < 0 or value > 255:
+            raise ValueError("moi gia tri RGB phai trong khoang 0..255")
+        output.append(int(value))
+    return output
 
 
 class ColorModelService:
     def __init__(self, csv_path: str = DATASET_PATH):
         self.csv_path = csv_path
         self.df: pd.DataFrame | None = None
-        self.X = None
-        self.y = None
-        self.X_train = None
-        self.X_test = None
-        self.y_train = None
-        self.y_test = None
-
+        self.X: np.ndarray | None = None
+        self.y: np.ndarray | None = None
+        self.X_train: np.ndarray | None = None
+        self.X_test: np.ndarray | None = None
+        self.y_train: np.ndarray | None = None
+        self.y_test: np.ndarray | None = None
         self.models: dict[str, KNeighborsClassifier] = {}
         self.metric_results: list[dict] = []
         self.best_metric_name: str | None = None
 
     def load_dataset(self) -> None:
         df = pd.read_csv(self.csv_path)
-        df["label"] = df["label"].astype(str).str.strip().str.lower()
+        required_columns = {"red", "green", "blue", "label"}
+        missing = required_columns.difference(df.columns)
+        if missing:
+            raise ValueError(f"Dataset thieu cot: {', '.join(sorted(missing))}")
 
+        df["label"] = df["label"].astype(str).str.strip().str.lower()
         self.df = df
-        self.X = df[["red", "green", "blue"]].values
+        self.X = df[["red", "green", "blue"]].astype(float).values
         self.y = df["label"].values
 
     def split_dataset(self) -> None:
+        if self.X is None or self.y is None:
+            raise RuntimeError("Dataset chua duoc load")
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
             self.X,
             self.y,
@@ -70,10 +86,13 @@ class ColorModelService:
         )
 
     def train_all(self) -> None:
+        if self.X_train is None or self.y_train is None:
+            raise RuntimeError("Train set chua san sang")
+
         self.metric_results = []
         self.models = {}
 
-        for metric_name in METRIC_CONFIGS.keys():
+        for metric_name in METRIC_CONFIGS:
             model = self.build_model(metric_name)
             model.fit(self.X_train, self.y_train)
 
@@ -82,11 +101,13 @@ class ColorModelService:
             macro_f1 = f1_score(self.y_test, y_pred, average="macro")
 
             self.models[metric_name] = model
-            self.metric_results.append({
-                "metric_name": metric_name,
-                "accuracy": float(acc),
-                "macro_f1": float(macro_f1),
-            })
+            self.metric_results.append(
+                {
+                    "metric_name": metric_name,
+                    "accuracy": round(float(acc), 4),
+                    "macro_f1": round(float(macro_f1), 4),
+                }
+            )
 
         best = max(self.metric_results, key=lambda x: (x["accuracy"], x["macro_f1"]))
         self.best_metric_name = best["metric_name"]
@@ -95,6 +116,12 @@ class ColorModelService:
         self.load_dataset()
         self.split_dataset()
         self.train_all()
+
+    def _resolve_metric(self, metric_name: str | None = None) -> str:
+        used_metric = metric_name or self.best_metric_name
+        if not used_metric or used_metric not in self.models:
+            raise ValueError(f"Metric khong hop le: {used_metric}")
+        return used_metric
 
     def get_config(self) -> dict:
         return {
@@ -123,18 +150,14 @@ class ColorModelService:
         }
 
     def predict_one(self, rgb: list[int], metric_name: str | None = None) -> dict:
-        if len(rgb) != 3:
-            raise ValueError("RGB phai co dung 3 gia tri")
-
-        used_metric = metric_name or self.best_metric_name
-        if used_metric not in self.models:
-            raise ValueError(f"Metric khong hop le: {used_metric}")
+        rgb = normalize_rgb(rgb)
+        used_metric = self._resolve_metric(metric_name)
 
         rgb_arr = np.array(rgb, dtype=float).reshape(1, -1)
         pred = self.models[used_metric].predict(rgb_arr)[0]
 
         return {
-            "rgb": [int(x) for x in rgb],
+            "rgb": rgb,
             "hex": rgb_to_hex(rgb),
             "predicted_label": str(pred),
             "used_metric": used_metric,
@@ -142,9 +165,7 @@ class ColorModelService:
         }
 
     def predict_all_metrics(self, rgb: list[int]) -> dict:
-        if len(rgb) != 3:
-            raise ValueError("RGB phai co dung 3 gia tri")
-
+        rgb = normalize_rgb(rgb)
         rgb_arr = np.array(rgb, dtype=float).reshape(1, -1)
         predictions = {}
 
@@ -152,33 +173,72 @@ class ColorModelService:
             predictions[metric_name] = str(model.predict(rgb_arr)[0])
 
         return {
-            "rgb": [int(x) for x in rgb],
+            "rgb": rgb,
             "hex": rgb_to_hex(rgb),
             "predictions": predictions,
             "recommended_metric": self.best_metric_name,
             "recommended_prediction": predictions[self.best_metric_name],
         }
 
-    def run_test_cases(self, metric_name: str | None = None) -> dict:
-        used_metric = metric_name or self.best_metric_name
-        if used_metric not in self.models:
-            raise ValueError(f"Metric khong hop le: {used_metric}")
+    def get_neighbors(
+        self,
+        rgb: list[int],
+        metric_name: str | None = None,
+        k: int | None = None,
+    ) -> dict:
+        rgb = normalize_rgb(rgb)
+        used_metric = self._resolve_metric(metric_name)
+        used_k = int(k or K_NEIGHBORS)
 
+        if used_k < 1:
+            raise ValueError("k phai >= 1")
+        if used_k > len(self.X_train):
+            raise ValueError("k lon hon so luong mau training")
+
+        model = self.models[used_metric]
+        rgb_arr = np.array(rgb, dtype=float).reshape(1, -1)
+        distances, indices = model.kneighbors(rgb_arr, n_neighbors=used_k)
+
+        neighbors = []
+        for rank, (distance, index) in enumerate(zip(distances[0], indices[0]), start=1):
+            item_rgb = [int(x) for x in self.X_train[index]]
+            neighbors.append(
+                {
+                    "rank": rank,
+                    "rgb": item_rgb,
+                    "hex": rgb_to_hex(item_rgb),
+                    "label": str(self.y_train[index]),
+                    "distance": round(float(distance), 4),
+                }
+            )
+
+        return {
+            "query": {"rgb": rgb, "hex": rgb_to_hex(rgb)},
+            "used_metric": used_metric,
+            "k": used_k,
+            "neighbors": neighbors,
+        }
+
+    def run_test_cases(self, metric_name: str | None = None) -> dict:
+        used_metric = self._resolve_metric(metric_name)
         model = self.models[used_metric]
         outputs = []
 
         for case in ALL_TEST_CASES:
-            rgb_arr = np.array(case["rgb"], dtype=float).reshape(1, -1)
+            rgb = normalize_rgb(case["rgb"])
+            rgb_arr = np.array(rgb, dtype=float).reshape(1, -1)
             pred = model.predict(rgb_arr)[0]
 
-            outputs.append({
-                "name": case["name"],
-                "rgb": case["rgb"],
-                "hex": rgb_to_hex(case["rgb"]),
-                "expected": case["expected"],
-                "predicted": str(pred),
-                "is_correct": str(pred) == str(case["expected"]),
-            })
+            outputs.append(
+                {
+                    "name": case["name"],
+                    "rgb": rgb,
+                    "hex": rgb_to_hex(rgb),
+                    "expected": case["expected"],
+                    "predicted": str(pred),
+                    "is_correct": str(pred) == str(case["expected"]),
+                }
+            )
 
         total = len(outputs)
         correct = sum(1 for x in outputs if x["is_correct"])
@@ -195,10 +255,7 @@ class ColorModelService:
         }
 
     def get_classification_report(self, metric_name: str | None = None) -> dict:
-        used_metric = metric_name or self.best_metric_name
-        if used_metric not in self.models:
-            raise ValueError(f"Metric khong hop le: {used_metric}")
-
+        used_metric = self._resolve_metric(metric_name)
         model = self.models[used_metric]
         y_pred = model.predict(self.X_test)
 

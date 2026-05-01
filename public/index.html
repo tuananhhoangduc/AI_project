@@ -11,35 +11,29 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/static/styles.css" />
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" defer></script>
+    <script src="/static/js/main.js" type="module" defer></script>
   </head>
   <body>
     <main class="page">
       <header class="hero">
         <div class="hero-inner">
+          <span class="eyebrow">KNN Color Intelligence</span>
           <h1>Color Classifier</h1>
-          <p>K-Nearest Neighbors for Image Color Classification</p>
+          <p>Classify colors, analyze palettes, compare Delta-E, generate harmonies, and visualize nearest neighbors in RGB space.</p>
         </div>
       </header>
 
       <section class="workspace">
         <div class="panel image-panel">
-          <div class="panel-head">
-            <h2>Image</h2>
-          </div>
+          <div class="panel-head"><h2>Image</h2></div>
 
           <div id="uploadZone" class="drop-area">
             <div class="drop-copy">
               <p>Upload, paste, or drop your image here</p>
               <div class="drop-actions">
-                <input
-                  type="file"
-                  id="imageInput"
-                  accept="image/*"
-                  class="file-input"
-                />
-                <button id="pickFileBtn" class="primary-btn" type="button">
-                  Use your image
-                </button>
+                <input type="file" id="imageInput" accept="image/*" class="file-input" />
+                <button id="pickFileBtn" class="primary-btn" type="button">Use your image</button>
               </div>
               <span class="muted">PNG, JPG, WebP supported</span>
             </div>
@@ -53,28 +47,31 @@
             <div class="palette-head">
               <span>Color Palette</span>
               <div class="palette-controls">
-                <button id="paletteMinus" class="ghost-btn" type="button">
-                  -
-                </button>
-                <button id="palettePlus" class="ghost-btn" type="button">
-                  +
-                </button>
+                <button id="exportJsonBtn" class="ghost-btn" type="button">JSON</button>
+                <button id="exportCssBtn" class="ghost-btn" type="button">CSS</button>
+                <button id="paletteMinus" class="ghost-btn" type="button">-</button>
+                <button id="palettePlus" class="ghost-btn" type="button">+</button>
               </div>
             </div>
             <div id="paletteSwatches" class="palette-swatches">
               <span class="placeholder">Pick an image to generate palette</span>
             </div>
+            <div id="paletteBar" class="palette-bar hidden"></div>
           </div>
         </div>
 
         <div class="panel colors-panel">
-          <div class="panel-head">
-            <h2>Colors</h2>
-          </div>
+          <div class="panel-head"><h2>Colors</h2></div>
 
           <div class="swatch-row">
-            <div id="primarySwatch" class="swatch large"></div>
-            <div id="secondarySwatch" class="swatch large"></div>
+            <div>
+              <div class="swatch-label">Current</div>
+              <div id="primarySwatch" class="swatch large"></div>
+            </div>
+            <div>
+              <div class="swatch-label">Previous</div>
+              <div id="secondarySwatch" class="swatch large"></div>
+            </div>
           </div>
 
           <div class="detail-list">
@@ -103,21 +100,93 @@
           </div>
 
           <div class="use-image">
-            <div class="use-title">Use your own image</div>
-            <button id="useImageBtn" class="primary-btn" type="button">
-              Use your image
-            </button>
-            <button id="eyeDropperBtn" class="secondary-btn" type="button">
-              Pick from screen
-            </button>
+            <div class="use-title">Pick color</div>
+            <button id="useImageBtn" class="primary-btn" type="button">Use your image</button>
+            <button id="eyeDropperBtn" class="secondary-btn" type="button">Pick from screen</button>
           </div>
         </div>
       </section>
 
-      <section class="panel utilities-panel">
-        <div class="panel-head">
-          <h2>Utilities</h2>
+      <section class="panel webcam-panel">
+  <div class="panel-head">
+    <h2>Live Webcam Color Picker</h2>
+  </div>
+
+  <div class="webcam-stage">
+    <video id="webcamVideo" autoplay playsinline muted></video>
+    <div class="crosshair"></div>
+  </div>
+
+  <canvas id="webcamCanvas" class="hidden"></canvas>
+
+  <div class="webcam-actions">
+    <button id="startWebcamBtn" class="primary-btn" type="button">
+      Open Webcam
+    </button>
+    <button id="stopWebcamBtn" class="secondary-btn" type="button" disabled>
+      Stop
+    </button>
+  </div>
+
+  <div id="webcamStatus" class="webcam-status">Camera is off</div>
+
+  <div class="webcam-result-card">
+    <div class="webcam-result-head">Current Webcam Scan</div>
+    <div class="webcam-current">
+      <div id="webcamCurrentSwatch" class="webcam-current-swatch"></div>
+      <div class="webcam-current-info">
+        <div><span>Predicted color:</span> <strong id="webcamCurrentLabel">-</strong></div>
+        <div><span>HEX:</span> <span id="webcamCurrentHex">-</span></div>
+        <div><span>RGB:</span> <span id="webcamCurrentRgb">-</span></div>
+        <div><span>Time:</span> <span id="webcamCurrentTime">-</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="scan-history-card">
+    <div class="scan-history-head">
+      <span>Scan History</span>
+      <button id="clearScanHistoryBtn" class="ghost-btn" type="button">
+        Clear
+      </button>
+    </div>
+    <div id="scanHistory" class="scan-history-list">
+      <span class="placeholder">No scan results yet</span>
+    </div>
+  </div>
+</section>
+
+      <section class="tools-grid">
+        <div class="panel">
+          <div class="panel-head"><h2>Color Harmonies</h2></div>
+          <div id="harmonyResult" class="harmony-grid">
+            <span class="placeholder">Select a color to generate harmonies</span>
+          </div>
         </div>
+
+        <div class="panel">
+          <div class="panel-head"><h2>Delta-E Difference</h2></div>
+          <div class="delta-card">
+            <p class="muted">Compare current color with previous selected color.</p>
+            <div id="deltaResult" class="delta-result">
+              <span class="placeholder">Select two colors first</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel knn-panel">
+        <div class="panel-head knn-head">
+          <h2>3D KNN Neighbors</h2>
+          <button id="loadNeighborsBtn" class="secondary-btn" type="button">Load neighbors</button>
+        </div>
+        <div id="knnPlot" class="knn-plot">
+          <span class="placeholder">Select a color, then load nearest neighbors.</span>
+        </div>
+      </section>
+
+      <section class="panel utilities-panel">
+        <div class="panel-head"><h2>Utilities</h2></div>
         <div class="utilities-actions">
           <button id="btn-config" class="secondary-btn">Config</button>
           <button id="btn-summary" class="secondary-btn">Summary</button>
@@ -128,7 +197,5 @@
         </div>
       </section>
     </main>
-
-    <script src="/static/main.js"></script>
   </body>
 </html>

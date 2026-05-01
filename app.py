@@ -27,22 +27,17 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(
-    title="Color Classification API",
-    version="1.1.0",
-    lifespan=lifespan,
-)
+app = FastAPI(title="Color Classification API", version="1.2.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # deploy thi doi lai origin FE
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Serve frontend static files from the `public` directory
-app.mount("/static", StaticFiles(directory="public"), name="public")
+app.mount("/static", StaticFiles(directory="public/static"), name="static")
 
 
 @app.get("/")
@@ -63,6 +58,10 @@ class PredictRequest(BaseModel):
             if x < 0 or x > 255:
                 raise ValueError("moi gia tri rgb phai trong khoang 0..255")
         return value
+
+
+class NeighborsRequest(PredictRequest):
+    k: int | None = Field(default=None, ge=1, le=30)
 
 
 @app.get("/api/health")
@@ -116,5 +115,17 @@ def predict_color(payload: PredictRequest):
 def predict_all(payload: PredictRequest):
     try:
         return service.predict_all_metrics(payload.rgb)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/predict/neighbors")
+def predict_neighbors(payload: NeighborsRequest):
+    try:
+        return service.get_neighbors(
+            rgb=payload.rgb,
+            metric_name=payload.metric.value if payload.metric else None,
+            k=payload.k,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
