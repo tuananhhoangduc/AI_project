@@ -11,7 +11,8 @@
     rel="stylesheet" />
   <link rel="stylesheet" href="/static/styles.css" />
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" defer></script>
-  <script src="/static/js/main.js" type="module" defer></script>
+  <!-- <script src="/static/js/main.js" type="module" defer></script> -->
+  <script src="/static/js/main.js?v=fix-image-picker-1" type="module" defer></script>
 </head>
 
 <body>
@@ -31,12 +32,15 @@
           <h2>Image</h2>
         </div>
 
+        <input type="file" id="imageInput" accept="image/*" class="file-input" />
+
         <div id="uploadZone" class="drop-area">
           <div class="drop-copy">
             <p>Upload, paste, or drop your image here</p>
             <div class="drop-actions">
-              <input type="file" id="imageInput" accept="image/*" class="file-input" />
-              <button id="pickFileBtn" class="primary-btn" type="button">Use your image</button>
+              <button id="pickFileBtn" class="primary-btn" type="button">
+                Use your image
+              </button>
             </div>
             <span class="muted">PNG, JPG, WebP supported</span>
           </div>
@@ -106,7 +110,9 @@
 
         <div class="use-image">
           <div class="use-title">Pick color</div>
-          <button id="useImageBtn" class="primary-btn" type="button">Use your image</button>
+          <button id="useImageBtn" class="primary-btn" type="button">
+            Use your image
+          </button>
           <button id="eyeDropperBtn" class="secondary-btn" type="button">Pick from screen</button>
         </div>
       </div>
@@ -186,7 +192,7 @@
 
     <section class="panel knn-panel">
       <div class="panel-head knn-head">
-        <h2>3D KNN Neighbors</h2>
+        <h2>KNN Nearest Colors</h2>
         <button id="loadNeighborsBtn" class="secondary-btn" type="button">Load neighbors</button>
       </div>
       <div id="knnPlot" class="knn-plot">

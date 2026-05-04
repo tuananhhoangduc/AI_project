@@ -12,6 +12,8 @@ const state = {
   previous: null,
   imageSrc: null,
   scanHistory: [],
+  modelConfig: null,
+  pickFromImageMode: false,
 };
 
 function setDetailValues(rgb) {
@@ -33,23 +35,50 @@ function updateSwatches(current) {
 
 async function classifyColor(rgb) {
   const resultArea = $("#resultArea");
-  resultArea.innerHTML = '<span class="placeholder">Predicting...</span>';
+
+  resultArea.innerHTML = `
+    <div class="classification-loading">
+      <div class="utility-spinner"></div>
+      <span>Predicting color...</span>
+    </div>
+  `;
 
   try {
     const result = await postJson("/api/predict/all", { rgb });
+    const selectedHex = result.hex || rgb2hex(...rgb);
 
     const rows = Object.entries(result.predictions)
-      .map(
-        ([metric, label]) =>
-          `<div class="prediction-row"><span>${escapeHtml(metric)}</span><strong>${escapeHtml(label)}</strong></div>`,
-      )
+      .map(([metric, label]) => {
+        const isRecommended = metric === result.recommended_metric;
+
+        return `
+          <div class="classify-metric ${isRecommended ? "recommended-metric" : ""}">
+            <div>
+              <strong>${escapeHtml(formatMetricName(metric))}</strong>
+              <span>${escapeHtml(getMetricDescription(metric))}</span>
+            </div>
+            <div class="classify-label">
+              ${escapeHtml(label)}
+            </div>
+          </div>
+        `;
+      })
       .join("");
 
     resultArea.innerHTML = `
-      <div class="prediction-list">${rows}</div>
-      <div class="recommended">
-        Recommended: <strong>${escapeHtml(result.recommended_prediction)}</strong>
-        (${escapeHtml(result.recommended_metric)})
+      <div class="classify-card">
+        <div class="classify-hero">
+          <div class="classify-swatch" style="background:${selectedHex}"></div>
+          <div>
+            <span>Recommended prediction</span>
+            <strong>${escapeHtml(result.recommended_prediction)}</strong>
+            <small>${escapeHtml(formatMetricName(result.recommended_metric))} · ${selectedHex}</small>
+          </div>
+        </div>
+
+        <div class="classify-grid">
+          ${rows}
+        </div>
       </div>
     `;
 
@@ -229,7 +258,15 @@ function renderPalette(palette) {
     swatch.style.backgroundColor = color.hex;
     swatch.title = `${color.hex} - ${color.percentage}%`;
     swatch.innerHTML = `<span>${color.percentage}%</span>`;
-    swatch.addEventListener("click", () => selectColor(color.rgb));
+    // Trong hàm renderPalette, sửa swatch click:
+    swatch.addEventListener("click", () => {
+      selectColor(color.rgb);
+      // nếu KNN panel đang mở thì re-render luôn
+      const plot = $("#knnPlot");
+      if (plot && !plot.querySelector(".knn-empty, .palette.placeholder")) {
+        loadNeighbors();
+      }
+    });
     wrap.appendChild(swatch);
 
     const piece = document.createElement("div");
@@ -285,72 +322,253 @@ async function loadNeighbors() {
   const plot = $("#knnPlot");
 
   if (!state.selected) {
-    plot.innerHTML = '<span class="placeholder">Select a color first.</span>';
+    plot.innerHTML = '<div class="knn-empty">Select a color first.</div>';
     return;
   }
 
-  plot.innerHTML = '<span class="placeholder">Loading nearest neighbors...</span>';
+  if (window.Plotly?.purge) {
+    try {
+      window.Plotly.purge("knnPlot");
+    } catch {
+    }
+  }
+
+  plot.innerHTML = `
+    <div class="knn-loading">
+      <div class="utility-spinner"></div>
+      <span>Loading nearest colors...</span>
+    </div>
+  `;
 
   try {
     const result = await postJson("/api/predict/neighbors", {
       rgb: state.selected,
-      k: 8,
     });
 
-    renderKnnPlot(result);
+    renderKnnPlot(result, state.palette);
   } catch (error) {
     plot.innerHTML = `<div class="error">${escapeHtml(error.message)}</div>`;
   }
 }
 
+function getNeighborDistance(item, queryRgb) {
+  if (typeof item.distance === "number") return item.distance;
+
+  if (Array.isArray(item.rgb) && Array.isArray(queryRgb)) {
+    const dr = item.rgb[0] - queryRgb[0];
+    const dg = item.rgb[1] - queryRgb[1];
+    const db = item.rgb[2] - queryRgb[2];
+    return Math.sqrt(dr * dr + dg * dg + db * db);
+  }
+  return 0;
+}
+
 function renderKnnPlot(result) {
-  const query = result.query.rgb;
-  const neighbors = result.neighbors;
+  const plot = $("#knnPlot");
+  const query = result.query?.rgb || state.selected;
+  const queryHex = result.query?.hex || rgb2hex(...query);
+  const neighbors = result.neighbors || [];
+  const usedK = result.k || neighbors.length;
+  const usedMetric = result.used_metric || "-";
+
+  if (!query || !neighbors.length) {
+    plot.innerHTML = '<div class="knn-empty">No nearest colors found.</div>';
+    return;
+  }
+
+  const points = neighbors.map((item, index) => ({
+    rank: item.rank || index + 1,
+    label: item.label || "unknown",
+    rgb: item.rgb,
+    hex: item.hex || rgb2hex(...item.rgb),
+    distance: getNeighborDistance(item, query),
+  }));
+
+  const maxDistance = Math.max(...points.map((p) => p.distance), 1);
+
+  const rows = points
+    .map((point) => {
+      const similarity = Math.max(0, 100 - Math.round((point.distance / maxDistance) * 100));
+
+      return `
+        <div class="knn-row">
+          <div class="knn-row-rank">#${point.rank}</div>
+          <div class="knn-row-color" style="background:${point.hex}"></div>
+          <div class="knn-row-main">
+            <strong>${escapeHtml(point.label)}</strong>
+            <span>${escapeHtml(point.hex)} · RGB(${point.rgb.join(", ")})</span>
+          </div>
+          <div class="knn-row-distance">
+            <strong>${point.distance.toFixed(1)}</strong>
+            <span>dist</span>
+          </div>
+          <div class="knn-row-bar">
+            <div style="width:${similarity}%"></div>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+
+  plot.innerHTML = `
+    <div class="knn-clean">
+      <div class="knn-clean-top">
+        <div>
+          <h3>KNN nearest colors</h3>
+          <p>Đang hiển thị <strong>${usedK}</strong> điểm gần nhất theo metric <strong>${escapeHtml(formatMetricName(usedMetric))}</strong>.</p>
+        </div>
+
+        <div class="knn-query-card">
+          <div class="knn-query-swatch" style="background:${queryHex}"></div>
+          <div>
+            <span>Selected</span>
+            <strong>${escapeHtml(queryHex)}</strong>
+            <small>RGB(${query.join(", ")})</small>
+          </div>
+        </div>
+      </div>
+
+      <div id="knnScatter2d" class="knn-scatter-2d"></div>
+
+      <div class="knn-row-list">
+        ${rows}
+      </div>
+    </div>
+  `;
+
+  drawKnnScatter2d({
+    elementId: "knnScatter2d",
+    query,
+    queryHex,
+    points,
+    usedK,
+    usedMetric,
+  });
+}
+
+function getAxisRange(values) {
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const spread = Math.max(max - min, 18);
+  const pad = Math.max(10, spread * 0.45);
+
+  return [
+    Math.max(0, Math.floor(min - pad)),
+    Math.min(255, Math.ceil(max + pad)),
+  ];
+}
+
+function drawKnnScatter2d({ elementId, query, queryHex, points, usedK, usedMetric }) {
+  const reds = [query[0], ...points.map((p) => p.rgb[0])];
+  const greens = [query[1], ...points.map((p) => p.rgb[1])];
+
+  const xRange = getAxisRange(reds);
+  const yRange = getAxisRange(greens);
 
   const neighborTrace = {
-    x: neighbors.map((item) => item.rgb[0]),
-    y: neighbors.map((item) => item.rgb[1]),
-    z: neighbors.map((item) => item.rgb[2]),
+    x: points.map((p) => p.rgb[0]),
+    y: points.map((p) => p.rgb[1]),
     mode: "markers+text",
-    type: "scatter3d",
-    text: neighbors.map((item) => `${item.rank}. ${item.label}`),
-    marker: {
-      size: 6,
-      color: neighbors.map((item) => item.hex),
-    },
+    type: "scatter",
     name: "Nearest neighbors",
+    text: points.map((p) => String(p.rank)),
+    textposition: "middle center",
+    hoverinfo: "text",
+    hovertext: points.map(
+      (p) =>
+        `#${p.rank} ${p.label}<br>${p.hex}<br>RGB(${p.rgb.join(", ")})<br>Distance: ${p.distance.toFixed(2)}`,
+    ),
+    marker: {
+      size: 28,
+      color: points.map((p) => p.hex),
+      opacity: 0.88,
+      line: {
+        color: "#ffffff",
+        width: 3,
+      },
+    },
+    textfont: {
+      color: points.map((p) => getReadableTextColor(p.rgb)),
+      size: 11,
+      family: "Plus Jakarta Sans, sans-serif",
+    },
   };
 
   const queryTrace = {
     x: [query[0]],
     y: [query[1]],
-    z: [query[2]],
     mode: "markers+text",
-    type: "scatter3d",
-    text: ["Selected color"],
+    type: "scatter",
+    name: "Selected color",
+    text: ["S"],
+    textposition: "middle center",
+    hoverinfo: "text",
+    hovertext: [`Selected<br>${queryHex}<br>RGB(${query.join(", ")})`],
     marker: {
-      size: 9,
-      color: [result.query.hex],
+      size: 42,
+      color: queryHex,
       symbol: "diamond",
-    },
-    name: "Selected",
-  };
-
-  Plotly.newPlot(
-    "knnPlot",
-    [neighborTrace, queryTrace],
-    {
-      margin: { l: 0, r: 0, b: 0, t: 16 },
-      paper_bgcolor: "rgba(0,0,0,0)",
-      plot_bgcolor: "rgba(0,0,0,0)",
-      scene: {
-        xaxis: { title: "Red", range: [0, 255] },
-        yaxis: { title: "Green", range: [0, 255] },
-        zaxis: { title: "Blue", range: [0, 255] },
+      line: {
+        color: "#0f6aa8",
+        width: 4,
       },
     },
-    { responsive: true, displayModeBar: false },
-  );
+    textfont: {
+      color: getReadableTextColor(query),
+      size: 13,
+      family: "Plus Jakarta Sans, sans-serif",
+    },
+  };
+
+  const layout = {
+    title: {
+      text: `K=${usedK} nearest colors · ${formatMetricName(usedMetric)}`,
+      font: {
+        size: 17,
+        color: "#0f172a",
+        family: "Plus Jakarta Sans, sans-serif",
+      },
+      x: 0.04,
+    },
+    margin: { l: 56, r: 24, t: 54, b: 54 },
+    paper_bgcolor: "#ffffff",
+    plot_bgcolor: "#f8fafc",
+    xaxis: {
+      title: "Red channel",
+      range: xRange,
+      gridcolor: "#e2e8f0",
+      zeroline: false,
+      linecolor: "#94a3b8",
+      tickfont: { color: "#64748b" },
+    },
+    yaxis: {
+      title: "Green channel",
+      range: yRange,
+      gridcolor: "#e2e8f0",
+      zeroline: false,
+      linecolor: "#94a3b8",
+      tickfont: { color: "#64748b" },
+    },
+    showlegend: false,
+    hoverlabel: {
+      bgcolor: "#0f172a",
+      font: {
+        color: "#ffffff",
+        family: "Plus Jakarta Sans, sans-serif",
+      },
+    },
+  };
+
+  Plotly.newPlot(elementId, [neighborTrace, queryTrace], layout, {
+    responsive: true,
+    displayModeBar: false,
+  });
+}
+
+function getReadableTextColor(rgb) {
+  const [r, g, b] = rgb;
+  const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+  return brightness > 145 ? "#0f172a" : "#ffffff";
 }
 
 function setActiveUtilityTab(activeId) {
@@ -517,27 +735,27 @@ function renderSummaryDashboard(summary) {
 
   $("#utilOutput").innerHTML = `
     ${renderStatCards([
-      {
-        label: "Dataset rows",
-        value: dataset.rows || 0,
-        description: "RGB color samples used by the model",
-      },
-      {
-        label: "Recommended metric",
-        value: formatMetricName(config.recommended_metric || best.metric_name || "-"),
-        description: "Selected by accuracy and Macro F1",
-      },
-      {
-        label: "K neighbors",
-        value: config.k_neighbors || "-",
-        description: "Number of nearest samples used for voting",
-      },
-      {
-        label: "Best accuracy",
-        value: best.accuracy !== undefined ? toPercent(best.accuracy) : "-",
-        description: "Performance on the test split",
-      },
-    ])}
+    {
+      label: "Dataset rows",
+      value: dataset.rows || 0,
+      description: "RGB color samples used by the model",
+    },
+    {
+      label: "Recommended metric",
+      value: formatMetricName(config.recommended_metric || best.metric_name || "-"),
+      description: "Selected by accuracy and Macro F1",
+    },
+    {
+      label: "K neighbors",
+      value: config.k_neighbors || "-",
+      description: "Number of nearest samples used for voting",
+    },
+    {
+      label: "Best accuracy",
+      value: best.accuracy !== undefined ? toPercent(best.accuracy) : "-",
+      description: "Performance on the test split",
+    },
+  ])}
 
     ${renderMetricCards(results, config.recommended_metric || best.metric_name)}
 
@@ -582,14 +800,14 @@ function renderExperimentControls(config, notice = "") {
           <span>Test size</span>
           <select id="expTestSize">
             ${[0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4]
-              .map(
-                (value) => `
+      .map(
+        (value) => `
                   <option value="${value}" ${Math.abs(value - safeTestSize) < 0.0001 ? "selected" : ""}>
                     ${Math.round(value * 100)}% test / ${Math.round((1 - value) * 100)}% train
                   </option>
                 `,
-              )
-              .join("")}
+      )
+      .join("")}
           </select>
           <small>Controls how much data is reserved for evaluation.</small>
         </label>
@@ -677,6 +895,7 @@ function bindRetrainControls() {
       const response = await postJson("/api/model/retrain", payload);
       const data = extractApiData(response);
       const nextConfig = data.config || (await jsonFetch("/api/config"));
+      state.modelConfig = nextConfig;
       const summary = data.summary || null;
 
       renderConfigDashboard(
@@ -759,42 +978,6 @@ function renderConfigDashboard(config, notice = "") {
   `;
 
   bindRetrainControls();
-}
-
-function renderTestMetricControls(usedMetric = "") {
-  const metrics = ["", "euclidean", "manhattan", "chebyshev", "minkowski_p3"];
-
-  return `
-    <div class="utility-section test-control-section">
-      <div class="utility-section-head">
-        <div>
-          <h3>Test controls</h3>
-          <p class="utility-section-desc">
-            Run manual test cases with a specific distance metric without retraining the whole model.
-          </p>
-        </div>
-      </div>
-
-      <div class="test-control-row">
-        <label class="experiment-field compact">
-          <span>Metric for manual tests</span>
-          <select id="testMetricSelect">
-            ${metrics
-              .map((metric) => {
-                const label = metric ? formatMetricName(metric) : "Recommended metric";
-                const selected = metric === usedMetric ? "selected" : "";
-                return `<option value="${metric}" ${selected}>${label}</option>`;
-              })
-              .join("")}
-          </select>
-        </label>
-
-        <button id="runTestMetricBtn" class="primary-btn" type="button">
-          Run selected test
-        </button>
-      </div>
-    </div>
-  `;
 }
 
 async function loadTestDashboard(metric = "") {
@@ -897,27 +1080,123 @@ function renderTestDashboard(result) {
   bindTestControls();
 }
 
+function setImagePickMode(active) {
+  state.pickFromImageMode = active;
+  document.body.classList.toggle("image-pick-mode", active);
+
+  const btn = $("#eyeDropperBtn");
+  if (btn) {
+    btn.textContent = active ? "Click on image to pick color" : "Pick from uploaded image";
+  }
+}
+
+function pickColorFromPreview(event) {
+  if (!state.pickFromImageMode) return;
+
+  const img = $("#previewImg");
+  if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return;
+
+  event.preventDefault();
+
+  const rect = img.getBoundingClientRect();
+  const imgRatio = img.naturalWidth / img.naturalHeight;
+  const boxRatio = rect.width / rect.height;
+
+  let renderW = rect.width;
+  let renderH = rect.height;
+  let offsetX = 0;
+  let offsetY = 0;
+
+  if (boxRatio > imgRatio) {
+    renderH = rect.height;
+    renderW = renderH * imgRatio;
+    offsetX = (rect.width - renderW) / 2;
+  } else {
+    renderW = rect.width;
+    renderH = renderW / imgRatio;
+    offsetY = (rect.height - renderH) / 2;
+  }
+
+  const localX = event.clientX - rect.left - offsetX;
+  const localY = event.clientY - rect.top - offsetY;
+
+  if (localX < 0 || localY < 0 || localX > renderW || localY > renderH) {
+    return;
+  }
+
+  const sourceX = Math.floor((localX / renderW) * img.naturalWidth);
+  const sourceY = Math.floor((localY / renderH) * img.naturalHeight);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0);
+
+  const pixel = ctx.getImageData(sourceX, sourceY, 1, 1).data;
+  const rgb = [pixel[0], pixel[1], pixel[2]];
+
+  setImagePickMode(false);
+  selectColor(rgb);
+}
+
 function bindEvents() {
   const imageInput = $("#imageInput");
   const uploadZone = $("#uploadZone");
+  const pickFileBtn = $("#pickFileBtn");
+  const useImageBtn = $("#useImageBtn");
+
+  let isOpeningPicker = false;
+
+  const openImagePicker = (event) => {
+    event?.preventDefault();
+    event?.stopPropagation();
+
+    if (isOpeningPicker) return;
+
+    isOpeningPicker = true;
+    imageInput.value = "";
+    imageInput.click();
+
+    setTimeout(() => {
+      isOpeningPicker = false;
+    }, 400);
+  };
 
   imageInput.addEventListener("change", (event) => {
-    if (event.target.files.length) handleImageFile(event.target.files[0]);
+    const file = event.target.files?.[0];
+    if (file) {
+      handleImageFile(file);
+    }
   });
 
-  $("#pickFileBtn").addEventListener("click", () => imageInput.click());
-  $("#useImageBtn").addEventListener("click", () => imageInput.click());
+  pickFileBtn.addEventListener("click", openImagePicker);
+  useImageBtn.addEventListener("click", openImagePicker);
 
-  uploadZone.addEventListener("click", () => imageInput.click());
+  uploadZone.addEventListener("click", (event) => {
+    if (event.target.closest("#pickFileBtn")) {
+      return;
+    }
+
+    openImagePicker(event);
+  });
+
   uploadZone.addEventListener("dragover", (event) => {
     event.preventDefault();
     uploadZone.classList.add("dragover");
   });
+
   uploadZone.addEventListener("dragleave", () => uploadZone.classList.remove("dragover"));
+
   uploadZone.addEventListener("drop", (event) => {
     event.preventDefault();
     uploadZone.classList.remove("dragover");
-    if (event.dataTransfer.files.length) handleImageFile(event.dataTransfer.files[0]);
+
+    const file = event.dataTransfer.files?.[0];
+    if (file) {
+      handleImageFile(file);
+    }
   });
 
   document.addEventListener("paste", (event) => {
@@ -950,19 +1229,21 @@ function bindEvents() {
     renderScanHistory();
   });
 
-  $("#eyeDropperBtn").addEventListener("click", async () => {
-    if (!window.EyeDropper) {
-      alert("EyeDropper is not supported in this browser.");
+  $("#eyeDropperBtn").addEventListener("click", () => {
+    if (!state.imageSrc) {
+      alert("Please upload an image first.");
       return;
     }
 
-    try {
-      const result = await new window.EyeDropper().open();
-      selectColor(hex2rgb(result.sRGBHex));
-    } catch {
-      // user cancelled
+    setImagePickMode(!state.pickFromImageMode);
+
+    const preview = $("#previewImg");
+    if (preview) {
+      preview.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   });
+
+  $("#previewImg").addEventListener("click", pickColorFromPreview);
 
   document.querySelectorAll("[data-copy]").forEach((btn) => {
     btn.addEventListener("click", async () => {

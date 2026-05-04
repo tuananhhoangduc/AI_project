@@ -191,7 +191,7 @@ class ColorModelService:
     ) -> dict:
         rgb = normalize_rgb(rgb)
         used_metric = self._resolve_metric(metric_name)
-        used_k = int(k or K_NEIGHBORS)
+        used_k = int(k or self.k_neighbors)
 
         if used_k < 1:
             raise ValueError("k phai >= 1")
