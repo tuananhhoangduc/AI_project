@@ -1084,19 +1084,21 @@ function setImagePickMode(active) {
   state.pickFromImageMode = active;
   document.body.classList.toggle("image-pick-mode", active);
 
+  if (!active) {
+    hideImagePickerLoupe();
+  }
+
   const btn = $("#eyeDropperBtn");
   if (btn) {
-    btn.textContent = active ? "Click on image to pick color" : "Pick from uploaded image";
+    btn.textContent = active ? "Click on image to pick color" : "Pick from screen";
   }
 }
 
-function pickColorFromPreview(event) {
-  if (!state.pickFromImageMode) return;
-
+function getPreviewImageSample(event) {
   const img = $("#previewImg");
-  if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return;
-
-  event.preventDefault();
+  if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) {
+    return null;
+  }
 
   const rect = img.getBoundingClientRect();
   const imgRatio = img.naturalWidth / img.naturalHeight;
@@ -1121,7 +1123,7 @@ function pickColorFromPreview(event) {
   const localY = event.clientY - rect.top - offsetY;
 
   if (localX < 0 || localY < 0 || localX > renderW || localY > renderH) {
-    return;
+    return null;
   }
 
   const sourceX = Math.floor((localX / renderW) * img.naturalWidth);
@@ -1136,9 +1138,55 @@ function pickColorFromPreview(event) {
 
   const pixel = ctx.getImageData(sourceX, sourceY, 1, 1).data;
   const rgb = [pixel[0], pixel[1], pixel[2]];
+  const hex = rgb2hex(...rgb);
+
+  return {
+    rgb,
+    hex,
+    previewX: event.clientX - rect.left,
+    previewY: event.clientY - rect.top,
+  };
+}
+
+function updateImagePickerLoupe(event) {
+  if (!state.pickFromImageMode) return;
+
+  const loupe = $("#imagePickerLoupe");
+  const loupeHex = $("#imagePickerLoupeHex");
+  if (!loupe || !loupeHex) return;
+
+  const sample = getPreviewImageSample(event);
+
+  if (!sample) {
+    loupe.classList.add("hidden");
+    return;
+  }
+
+  loupe.classList.remove("hidden");
+  loupe.style.left = `${sample.previewX}px`;
+  loupe.style.top = `${sample.previewY}px`;
+  loupe.style.background = sample.hex;
+  loupeHex.textContent = sample.hex;
+}
+
+function hideImagePickerLoupe() {
+  const loupe = $("#imagePickerLoupe");
+  if (loupe) {
+    loupe.classList.add("hidden");
+  }
+}
+
+function pickColorFromPreview(event) {
+  if (!state.pickFromImageMode) return;
+
+  event.preventDefault();
+
+  const sample = getPreviewImageSample(event);
+  if (!sample) return;
 
   setImagePickMode(false);
-  selectColor(rgb);
+  hideImagePickerLoupe();
+  selectColor(sample.rgb);
 }
 
 function bindEvents() {
@@ -1243,7 +1291,11 @@ function bindEvents() {
     }
   });
 
-  $("#previewImg").addEventListener("click", pickColorFromPreview);
+  const previewImg = $("#previewImg");
+
+  previewImg.addEventListener("click", pickColorFromPreview);
+  previewImg.addEventListener("mousemove", updateImagePickerLoupe);
+  previewImg.addEventListener("mouseleave", hideImagePickerLoupe);
 
   document.querySelectorAll("[data-copy]").forEach((btn) => {
     btn.addEventListener("click", async () => {
