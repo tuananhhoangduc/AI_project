@@ -205,7 +205,6 @@ function pushScanHistory(result, meta = {}) {
 
   const latest = state.scanHistory[0];
 
-  // nếu quét liên tiếp ra đúng cùng màu thì khỏi lưu trùng
   if (latest && latest.hex === item.hex && latest.label === item.label) {
     return;
   }
@@ -258,10 +257,8 @@ function renderPalette(palette) {
     swatch.style.backgroundColor = color.hex;
     swatch.title = `${color.hex} - ${color.percentage}%`;
     swatch.innerHTML = `<span>${color.percentage}%</span>`;
-    // Trong hàm renderPalette, sửa swatch click:
     swatch.addEventListener("click", () => {
       selectColor(color.rgb);
-      // nếu KNN panel đang mở thì re-render luôn
       const plot = $("#knnPlot");
       if (plot && !plot.querySelector(".knn-empty, .palette.placeholder")) {
         loadNeighbors();

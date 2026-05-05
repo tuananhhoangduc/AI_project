@@ -112,8 +112,6 @@ export function setupWebcamPicker({
     if (!stream || !video.videoWidth || !video.videoHeight || isCapturing) {
       return;
     }
-
-    // Không quét khi tab đang ẩn để đỡ tốn tài nguyên
     if (document.hidden) {
       return;
     }
