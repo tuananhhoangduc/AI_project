@@ -748,9 +748,11 @@ function renderSummaryDashboard(summary) {
       description: "Number of nearest samples used for voting",
     },
     {
-      label: "Best accuracy",
-      value: best.accuracy !== undefined ? toPercent(best.accuracy) : "-",
-      description: "Performance on the test split",
+      label: "Best Macro F1",
+      value: best.macro_f1 !== undefined ? toPercent(best.macro_f1) : "-",
+      description: best.accuracy !== undefined
+        ? `Tie-break accuracy: ${toPercent(best.accuracy)}`
+        : "Average F1 across all labels",
     },
   ])}
 
@@ -771,7 +773,7 @@ function renderExperimentControls(config, notice = "") {
         <div>
           <h3>Experiment controls</h3>
           <p class="utility-section-desc">
-            Change KNN parameters, retrain the model, then compare accuracy and test results again.
+            Change KNN parameters, retrain the model, then compare Macro F1, accuracy, and test results again.
           </p>
         </div>
         <span>Live retrain</span>

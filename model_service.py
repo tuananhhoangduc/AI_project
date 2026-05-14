@@ -388,7 +388,7 @@ class ColorModelService:
                 }
             )
 
-        best = max(self.metric_results, key=lambda x: (x["accuracy"], x["macro_f1"]))
+        best = max(self.metric_results, key=lambda x: (x["macro_f1"], x["accuracy"]))
         self.best_metric_name = best["metric_name"]
 
     def initialize(self) -> None:
@@ -415,7 +415,7 @@ class ColorModelService:
         if not self.metric_results:
             raise RuntimeError("Model chua duoc khoi tao")
 
-        best = max(self.metric_results, key=lambda x: (x["accuracy"], x["macro_f1"]))
+        best = max(self.metric_results, key=lambda x: (x["macro_f1"], x["accuracy"]))
         label_counts = dict(Counter(self.y))
 
         return {
